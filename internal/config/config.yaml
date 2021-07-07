@@ -268,7 +268,7 @@ dsn: memory
 # dsn: mysql://user:password@tcp(host:123)/database
 
 # hsm configures Hardware Security Module for hydra.openid.id-token, hydra.jwt.access-token keys
-# Either slot or token-label must be set. If token-label is set, then first slot in index with this label is used.
+# Either slot or token_label must be set. If token_label is set, then first slot in index with this label is used.
 hsm:
   enabled: false
   library: /path/to/hsm-vendor/library.so
