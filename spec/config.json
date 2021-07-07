@@ -425,6 +425,31 @@
       "type": "string",
       "description": "Sets the data source name. This configures the backend where ORY Hydra persists data. If dsn is \"memory\", data will be written to memory and is lost when you restart this instance. ORY Hydra supports popular SQL databases. For more detailed configuration information go to: https://www.ory.sh/docs/hydra/dependencies-environment#sql"
     },
+    "hsm": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Configures Hardware Security Module.",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "library": {
+          "type": "string",
+          "description": "Full pathname (including extension) of the PKCS#11 library"
+        },
+        "pin": {
+          "type": "string"
+        },
+        "slot": {
+          "type": "integer",
+          "description": "Slot of the token to use (if label is not specified)"
+        },
+        "token_label": {
+          "type": "string",
+          "description": "Label of the token to use (if slot is not specified)"
+        }
+      }
+    },
     "webfinger": {
       "type": "object",
       "additionalProperties": false,

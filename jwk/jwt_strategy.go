@@ -23,6 +23,7 @@ package jwk
 import (
 	"context"
 	"crypto/rsa"
+	"github.com/ThalesIgnite/crypto11"
 	"strings"
 	"sync"
 
@@ -33,6 +34,7 @@ import (
 	jwt2 "github.com/ory/fosite/token/jwt"
 
 	"github.com/ory/fosite/token/jwt"
+	"gopkg.in/square/go-jose.v2/cryptosigner"
 )
 
 type JWTStrategy interface {
@@ -55,8 +57,8 @@ type RS256JWTStrategy struct {
 	privateKeyID string
 }
 
-func NewRS256JWTStrategy(r InternalRegistry, rs func() string) (*RS256JWTStrategy, error) {
-	j := &RS256JWTStrategy{r: r, rs: rs, RS256JWTStrategy: new(jwt.RS256JWTStrategy)}
+func NewRS256JWTStrategy(c config.Provider, r InternalRegistry, rs func() string) (*RS256JWTStrategy, error) {
+	j := &RS256JWTStrategy{c: &c, r: r, rs: rs, RS256JWTStrategy: new(jwt.RS256JWTStrategy)}
 	if err := j.refresh(context.TODO()); err != nil {
 		return nil, err
 	}
@@ -109,49 +111,60 @@ func (j *RS256JWTStrategy) GetPublicKeyID(ctx context.Context) (string, error) {
 }
 
 func (j *RS256JWTStrategy) refresh(ctx context.Context) error {
-	keys, err := j.r.KeyManager().GetKeySet(ctx, j.rs())
-	if err != nil {
-		return err
-	}
-
-	public, err := FindKeyByPrefix(keys, "public")
-	if err != nil {
-		return err
-	}
-
-	private, err := FindKeyByPrefix(keys, "private")
-	if err != nil {
-		return err
-	}
-
-	if strings.Replace(public.KeyID, "public:", "", 1) != strings.Replace(private.KeyID, "private:", "", 1) {
-		return errors.New("public and private key pair kids do not match")
-	}
-
-	if k, ok := private.Key.(*rsa.PrivateKey); !ok {
-		return errors.New("unable to type assert key to *rsa.PublicKey")
+	if j.c.HsmEnabled() {
+		if keyPair, err := j.r.HardwareSecurityModule().FindKeyPair(nil, []byte(j.rs())); err != nil {
+			return err
+		} else {
+			j.Lock()
+			keyId, _ := j.r.HardwareSecurityModule().GetAttribute(keyPair, crypto11.CkaId)
+			j.RS256JWTStrategy.PrivateKey = cryptosigner.Opaque(keyPair)
+			j.publicKeyID = string(keyId.Value)
+			j.Unlock()
+		}
 	} else {
-		j.Lock()
-		j.privateKey = k
-		j.RS256JWTStrategy.PrivateKey = k
-		j.Unlock()
-	}
+		keys, err := j.r.KeyManager().GetKeySet(ctx, j.rs())
+		if err != nil {
+			return err
+		}
 
-	if k, ok := public.Key.(*rsa.PublicKey); !ok {
-		return errors.New("unable to type assert key to *rsa.PublicKey")
-	} else {
-		j.Lock()
-		j.publicKey = k
-		j.publicKeyID = public.KeyID
-		j.Unlock()
-	}
+		public, err := FindKeyByPrefix(keys, "public")
+		if err != nil {
+			return err
+		}
 
-	j.RLock()
-	defer j.RUnlock()
-	if j.privateKey.PublicKey.E != j.publicKey.E ||
-		j.privateKey.PublicKey.N.String() != j.publicKey.N.String() {
-		return errors.New("public and private key pair fetched from store does not match")
-	}
+		private, err := FindKeyByPrefix(keys, "private")
+		if err != nil {
+			return err
+		}
 
+		if strings.Replace(public.KeyID, "public:", "", 1) != strings.Replace(private.KeyID, "private:", "", 1) {
+			return errors.New("public and private key pair kids do not match")
+		}
+
+		if k, ok := private.Key.(*rsa.PrivateKey); !ok {
+			return errors.New("unable to type assert key to *rsa.PublicKey")
+		} else {
+			j.Lock()
+			j.privateKey = k
+			j.RS256JWTStrategy.PrivateKey = k
+			j.Unlock()
+		}
+
+		if k, ok := public.Key.(*rsa.PublicKey); !ok {
+			return errors.New("unable to type assert key to *rsa.PublicKey")
+		} else {
+			j.Lock()
+			j.publicKey = k
+			j.publicKeyID = public.KeyID
+			j.Unlock()
+		}
+
+		j.RLock()
+		defer j.RUnlock()
+		if j.privateKey.PublicKey.E != j.publicKey.E ||
+			j.privateKey.PublicKey.N.String() != j.publicKey.N.String() {
+			return errors.New("public and private key pair fetched from store does not match")
+		}
+	}
 	return nil
 }

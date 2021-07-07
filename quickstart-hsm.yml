@@ -1,0 +1,85 @@
+###########################################################################
+#######             FOR DEMONSTRATION PURPOSES ONLY                 #######
+###########################################################################
+#                                                                         #
+# If you have not yet read the tutorial, do so now:                       #
+#  https://www.ory.sh/docs/hydra/5min-tutorial                            #
+#                                                                         #
+# This set up is only for demonstration purposes. The login               #
+# endpoint can only be used if you follow the steps in the tutorial.      #
+#                                                                         #
+###########################################################################
+
+version: '3.7'
+
+services:
+
+  hydra:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile-hsm
+    ports:
+      - "4444:4444" # Public port
+      - "4445:4445" # Admin port
+      - "5555:5555" # Port for hydra token user
+    command:
+      serve -c /etc/config/hydra/hydra.yml all --dangerous-force-http
+    volumes:
+      -
+        type: volume
+        source: hydra-sqlite
+        target: /var/lib/sqlite
+        read_only: false
+      -
+        type: bind
+        source: ./contrib/quickstart/5-min
+        target: /etc/config/hydra
+    environment:
+      - DSN=sqlite:///var/lib/sqlite/db.sqlite?_fk=true
+      - HSM_ENABLED=true
+      - HSM_LIBRARY=/usr/lib/softhsm/libsofthsm2.so
+      - HSM_TOKEN_LABEL=hydra
+      - HSM_PIN=1234
+    restart: unless-stopped
+    depends_on:
+      - hydra-migrate
+    networks:
+      - intranet
+
+  hydra-migrate:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile-hsm
+    environment:
+      - DSN=sqlite:///var/lib/sqlite/db.sqlite?_fk=true
+    command:
+      migrate -c /etc/config/hydra/hydra.yml sql -e --yes
+    volumes:
+      -
+        type: volume
+        source: hydra-sqlite
+        target: /var/lib/sqlite
+        read_only: false
+      -
+        type: bind
+        source: ./contrib/quickstart/5-min
+        target: /etc/config/hydra
+    restart: on-failure
+    networks:
+      - intranet
+
+  consent:
+    environment:
+      - HYDRA_ADMIN_URL=http://hydra:4445
+    image: oryd/hydra-login-consent-node:v1.10.2
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    networks:
+      - intranet
+
+networks:
+  intranet:
+
+volumes:
+  hydra-sqlite:

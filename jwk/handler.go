@@ -23,6 +23,7 @@ package jwk
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/ThalesIgnite/crypto11"
 	"net/http"
 
 	"github.com/ory/hydra/driver/config"
@@ -91,21 +92,37 @@ func (h *Handler) WellKnown(w http.ResponseWriter, r *http.Request) {
 	var jwks jose.JSONWebKeySet
 
 	for _, set := range stringslice.Unique(h.c.WellKnownKeys()) {
-		keys, err := h.r.KeyManager().GetKeySet(r.Context(), set)
-		if err != nil {
-			h.r.Writer().WriteError(w, r, err)
-			return
-		}
+		if h.c.HsmEnabled() {
+			keyPair, err := h.r.HardwareSecurityModule().FindKeyPair(nil, []byte(set))
+			if err != nil {
+				h.r.Writer().WriteError(w, r, err)
+				return
+			}
+			keyId, _ := h.r.HardwareSecurityModule().GetAttribute(keyPair, crypto11.CkaId)
+			keys := &jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{
+				Algorithm: "RS256",
+				Use:       "sig",
+				Key:       keyPair.Public(),
+				KeyID:     fmt.Sprintf("public:%s", keyId.Value),
+			}}}
 
-		keys, err = FindKeysByPrefix(keys, "public")
-		if err != nil {
-			h.r.Writer().WriteError(w, r, err)
-			return
-		}
+			jwks.Keys = append(jwks.Keys, keys.Keys...)
+		} else {
+			keys, err := h.r.KeyManager().GetKeySet(r.Context(), set)
+			if err != nil {
+				h.r.Writer().WriteError(w, r, err)
+				return
+			}
 
-		jwks.Keys = append(jwks.Keys, keys.Keys...)
+			keys, err = FindKeysByPrefix(keys, "public")
+			if err != nil {
+				h.r.Writer().WriteError(w, r, err)
+				return
+			}
+
+			jwks.Keys = append(jwks.Keys, keys.Keys...)
+		}
 	}
-
 	h.r.Writer().Write(w, r, &jwks)
 }
 

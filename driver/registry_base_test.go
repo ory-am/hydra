@@ -37,6 +37,7 @@ func TestRegistryBase_newKeyStrategy_handlesNetworkError(t *testing.T) {
 	}
 
 	registryBase := RegistryBase{r: registry, l: l}
+	registryBase.WithConfig(c)
 
 	strategy := registryBase.newKeyStrategy("key")
 

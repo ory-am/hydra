@@ -14,8 +14,11 @@ replace github.com/dgrijalva/jwt-go => github.com/form3tech-oss/jwt-go v3.2.1+in
 
 replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
 
+replace github.com/ory/fosite => github.com/aarmam/fosite v0.40.2-hsm
+
 require (
 	github.com/DataDog/datadog-go v4.6.0+incompatible // indirect
+	github.com/ThalesIgnite/crypto11 v1.2.4
 	github.com/cenkalti/backoff/v3 v3.0.0
 	github.com/containerd/containerd v1.4.4 // indirect
 	github.com/evanphx/json-patch v0.5.2
@@ -74,5 +77,5 @@ require (
 	golang.org/x/oauth2 v0.0.0-20201208152858-08078c50e5b5
 	golang.org/x/tools v0.1.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.27.1
-	gopkg.in/square/go-jose.v2 v2.5.1
+	gopkg.in/square/go-jose.v2 v2.5.2-0.20210529014059-a5c7eec3c614
 )

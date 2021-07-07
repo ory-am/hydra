@@ -1,0 +1,56 @@
+FROM golang:1.16-alpine AS builder
+
+RUN apk -U --no-cache add build-base git gcc bash
+
+WORKDIR /go/src/github.com/ory/hydra
+
+ADD go.mod go.mod
+ADD go.sum go.sum
+
+ENV GO111MODULE on
+ENV CGO_ENABLED 1
+
+RUN go mod download
+
+ADD . .
+
+RUN go build -tags sqlite -o /usr/bin/hydra
+
+FROM alpine:3.13.4
+
+RUN apk -U --no-cache add softhsm opensc
+
+RUN pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --slot 0 --init-token --so-pin 0000 --init-pin --pin 1234 --label hydra \
+    && pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
+       --login --pin 1234 --token-label hydra \
+       --keypairgen --key-type rsa:4096 --usage-sign \
+       --label hydra.openid.id-token --id 68796472612e6f70656e69642e69642d746f6b656e \
+    && pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
+       --login --pin 1234 --token-label hydra \
+       --keypairgen --key-type rsa:4096 --usage-sign \
+       --label hydra.jwt.access-token --id 68796472612e6a77742e6163636573732d746f6b656e
+
+RUN addgroup -S ory; \
+    adduser -S ory -G ory -D  -h /home/ory -s /bin/nologin; \
+    chown -R ory:ory /home/ory; \
+    chown -R ory:ory /var/lib/softhsm/tokens
+
+COPY --from=builder /usr/bin/hydra /usr/bin/hydra
+
+# By creating the sqlite folder as the ory user, the mounted volume will be owned by ory:ory, which
+# is required for read/write of SQLite.
+RUN mkdir -p /var/lib/sqlite
+RUN chown ory:ory /var/lib/sqlite
+VOLUME /var/lib/sqlite
+
+# Exposing the ory home directory to simplify passing in hydra configuration (e.g. if the file $HOME/.hydra.yaml
+# exists, it will be automatically used as the configuration file).
+VOLUME /home/ory
+
+# Declare the standard ports used by hydra (4433 for public service endpoint, 4434 for admin service endpoint)
+EXPOSE 4444 4445
+
+USER ory
+
+ENTRYPOINT ["hydra"]
+CMD ["serve"]

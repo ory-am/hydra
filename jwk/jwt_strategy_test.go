@@ -46,7 +46,7 @@ func TestRS256JWTStrategy(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, m.AddKeySet(context.TODO(), "foo-set", ks))
 
-	s, err := NewRS256JWTStrategy(reg, func() string {
+	s, err := NewRS256JWTStrategy(*conf, reg, func() string {
 		return "foo-set"
 	})
 

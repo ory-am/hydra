@@ -2,7 +2,9 @@ package driver
 
 import (
 	"context"
+	"crypto/rsa"
 	"fmt"
+	"github.com/ThalesIgnite/crypto11"
 	"net"
 	"net/http"
 	"strings"
@@ -58,6 +60,7 @@ type RegistryBase struct {
 	fsc          fosite.ScopeStrategy
 	atjs         jwk.JWTStrategy
 	idtjs        jwk.JWTStrategy
+	hsm          *crypto11.Context
 	fscPrev      string
 	fos          *openid.DefaultStrategy
 	forv         *openid.OpenIDConnectRequestValidator
@@ -344,18 +347,22 @@ func (m *RegistryBase) ScopeStrategy() fosite.ScopeStrategy {
 }
 
 func (m *RegistryBase) newKeyStrategy(key string) (s jwk.JWTStrategy) {
-	if err := jwk.EnsureAsymmetricKeypairExists(context.Background(), m.r, new(jwk.RS256Generator), key); err != nil {
-		var netError net.Error
-		if errors.As(err, &netError) {
-			m.Logger().WithError(err).Fatalf(`Could not ensure that signing keys for "%s" exists. A network error occurred, see error for specific details.`, key)
-			return
-		}
+	if m.C.HsmEnabled() {
+		m.EnsureHsmKeypairExists(key)
+	} else {
+		if err := jwk.EnsureAsymmetricKeypairExists(context.Background(), m.r, new(jwk.RS256Generator), key); err != nil {
+			var netError net.Error
+			if errors.As(err, &netError) {
+				m.Logger().WithError(err).Fatalf(`Could not ensure that signing keys for "%s" exists. A network error occurred, see error for specific details.`, key)
+				return
+			}
 
-		m.Logger().WithError(err).Fatalf(`Could not ensure that signing keys for "%s" exists. If you are running against a persistent SQL database this is most likely because your "secrets.system" ("SECRETS_SYSTEM" environment variable) is not set or changed. When running with an SQL database backend you need to make sure that the secret is set and stays the same, unless when doing key rotation. This may also happen when you forget to run "hydra migrate sql"..`, key)
+			m.Logger().WithError(err).Fatalf(`Could not ensure that signing keys for "%s" exists. If you are running against a persistent SQL database this is most likely because your "secrets.system" ("SECRETS_SYSTEM" environment variable) is not set or changed. When running with an SQL database backend you need to make sure that the secret is set and stays the same, unless when doing key rotation. This may also happen when you forget to run "hydra migrate sql"..`, key)
+		}
 	}
 
 	if err := resilience.Retry(m.Logger(), time.Second*15, time.Minute*15, func() (err error) {
-		s, err = jwk.NewRS256JWTStrategy(m.r, func() string {
+		s, err = jwk.NewRS256JWTStrategy(*m.C, m.r, func() string {
 			return key
 		})
 		return err
@@ -367,7 +374,7 @@ func (m *RegistryBase) newKeyStrategy(key string) (s jwk.JWTStrategy) {
 }
 
 func (m *RegistryBase) AccessTokenJWTStrategy() jwk.JWTStrategy {
-	if m.atjs == nil {
+	if m.atjs == nil && m.C.IsUsingJWTAsAccessTokens() {
 		m.atjs = m.newKeyStrategy(x.OAuth2JWTKeyName)
 	}
 	return m.atjs
@@ -464,4 +471,40 @@ func (m *RegistryBase) WithOAuth2Provider(f fosite.OAuth2Provider) {
 // WithConsentStrategy forces a consent strategy which is only used for testing.
 func (m *RegistryBase) WithConsentStrategy(c consent.Strategy) {
 	m.cos = c
+}
+
+func (m *RegistryBase) HardwareSecurityModule() *crypto11.Context {
+	if m.hsm == nil && m.C.HsmEnabled() {
+		config11 := &crypto11.Config{
+			Path: m.C.HsmLibraryPath(),
+			Pin:  m.C.HsmPin(),
+		}
+
+		if m.C.HsmTokenLabel() != "" {
+			config11.TokenLabel = m.C.HsmTokenLabel()
+		} else {
+			config11.SlotNumber = m.C.HsmSlotNumber()
+		}
+
+		ctx11, err := crypto11.Configure(config11)
+		if err != nil {
+			m.Logger().WithError(err).Fatalf("Unable to configure Hardware Security Module. Library path: %s, slot: %v, token label: %s",
+				m.C.HsmLibraryPath(), *m.C.HsmSlotNumber(), m.C.HsmTokenLabel())
+		} else {
+			m.Logger().Info("Hardware Security Module is configured.")
+		}
+
+		m.hsm = ctx11
+	}
+	return m.hsm
+}
+
+func (m *RegistryBase) EnsureHsmKeypairExists(keyAlias string) {
+	if keyPair, err := m.HardwareSecurityModule().FindKeyPair(nil, []byte(keyAlias)); err != nil {
+		m.Logger().WithError(err).Fatalf(`Could not ensure that signing keys for "%s" exists on Hardware Security Module. `, keyAlias)
+	} else if _, isRSA := keyPair.Public().(*rsa.PublicKey); !isRSA || keyPair == nil {
+		m.Logger().WithError(err).Fatalf(`Key pair "%s" on Hardware Security Module is not RSA key`, keyAlias)
+	} else {
+		m.Logger().Infof(`Using key pair "%s" from Hardware Security Module.`, keyAlias)
+	}
 }
