@@ -1420,9 +1420,15 @@
         "parameters": [
           {
             "type": "string",
+            "description": "If set, lists only those consent sessions by the Subject that have been granted",
             "name": "subject",
-            "in": "query",
-            "required": true
+            "in": "query"
+          },
+          {
+            "type": "boolean",
+            "description": "If set to `?all=true`, lists consent sessions by all subjects that have been granted.",
+            "name": "all",
+            "in": "query"
           }
         ],
         "responses": {
