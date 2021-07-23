@@ -196,7 +196,7 @@ You can configure `urls.hooks.token_refresh` config key:
 ```yaml
 urls:
   hooks:
-    token_refresh: https://https://my-example.app/token-refresh-hook
+    token_refresh: https://my-example.app/token-refresh-hook
 ```
 
 Hydra calls this hook if it is configured with the following payload:
