@@ -54,6 +54,7 @@ const (
 	KeyErrorURL                                  = "urls.error"
 	KeyPublicURL                                 = "urls.self.public"
 	KeyIssuerURL                                 = "urls.self.issuer"
+	KeyTokenRefreshHookURL                       = "urls.hooks.token_refresh"
 	KeyAccessTokenStrategy                       = "strategies.access_token"
 	KeySubjectIdentifierAlgorithmSalt            = "oidc.subject_identifiers.pairwise.salt"
 	KeyPKCEEnforced                              = "oauth2.pkce.enforced"
@@ -373,6 +374,10 @@ func (p *Provider) OAuth2AuthURL() *url.URL {
 
 func (p *Provider) JWKSURL() *url.URL {
 	return p.p.RequestURIF(KeyJWKSURL, urlx.AppendPaths(p.IssuerURL(), "/.well-known/jwks.json"))
+}
+
+func (p *Provider) TokenRefreshHookURL() *url.URL {
+	return p.p.URIF(KeyTokenRefreshHookURL, nil)
 }
 
 func (p *Provider) AccessTokenStrategy() string {
