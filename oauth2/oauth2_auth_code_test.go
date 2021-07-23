@@ -38,6 +38,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/ory/hydra/client"
+	"github.com/ory/hydra/consent"
 	"github.com/ory/hydra/internal/testhelpers"
 
 	"github.com/julienschmidt/httprouter"
@@ -53,6 +54,7 @@ import (
 	hydra "github.com/ory/hydra/internal/httpclient/client"
 	"github.com/ory/hydra/internal/httpclient/client/admin"
 	"github.com/ory/hydra/internal/httpclient/models"
+	hydraoauth2 "github.com/ory/hydra/oauth2"
 	"github.com/ory/hydra/x"
 	"github.com/ory/x/pointerx"
 	"github.com/ory/x/urlx"
@@ -906,6 +908,63 @@ func TestAuthCodeWithMockStrategy(t *testing.T) {
 						body, err := ioutil.ReadAll(res.Body)
 						require.NoError(t, err)
 						require.NoError(t, json.Unmarshal(body, &refreshedToken))
+					})
+
+					t.Run("refreshing the token should call hook if configured", func(t *testing.T) {
+						if strat.d != "jwt" {
+							t.Skip()
+						}
+
+						hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+							var hookReq hydraoauth2.TokenRefreshHookRequest
+							require.NoError(t, json.NewDecoder(r.Body).Decode(&hookReq))
+
+							claims := map[string]interface{}{
+								"hooked": true,
+							}
+
+							hookResp := hydraoauth2.TokenRefreshHookResponse{
+								Session: consent.ConsentRequestSessionData{
+									AccessToken: claims,
+									IDToken:     claims,
+								},
+							}
+
+							w.WriteHeader(http.StatusOK)
+							require.NoError(t, json.NewEncoder(w).Encode(&hookResp))
+						}))
+						defer hs.Close()
+
+						conf.MustSet(config.KeyTokenRefreshHookURL, hs.URL)
+						defer conf.MustSet(config.KeyTokenRefreshHookURL, nil)
+
+						res, err := testRefresh(t, &refreshedToken, ts.URL, false)
+						require.NoError(t, err)
+						assert.Equal(t, http.StatusOK, res.StatusCode)
+
+						body, err := ioutil.ReadAll(res.Body)
+						require.NoError(t, err)
+						require.NoError(t, json.Unmarshal(body, &refreshedToken))
+
+						accessTokenBody, err := x.DecodeSegment(strings.Split(refreshedToken.AccessToken, ".")[1])
+						require.NoError(t, err)
+
+						accessTokenPayload := map[string]interface{}{}
+						require.NoError(t, json.Unmarshal(accessTokenBody, &accessTokenPayload))
+
+						accessTokenExtra := accessTokenPayload["ext"].(map[string]interface{})
+						require.NotNil(t, accessTokenExtra["hooked"])
+
+						var rawToken map[string]interface{}
+						require.NoError(t, json.Unmarshal(body, &rawToken))
+
+						idTokenBody, err := x.DecodeSegment(strings.Split(rawToken["id_token"].(string), ".")[1])
+						require.NoError(t, err)
+
+						idTokenPayload := map[string]interface{}{}
+						require.NoError(t, json.Unmarshal(idTokenBody, &idTokenPayload))
+
+						require.NotNil(t, idTokenPayload["hooked"])
 					})
 
 					t.Run("refreshing old token should no longer work", func(t *testing.T) {

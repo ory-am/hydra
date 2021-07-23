@@ -184,6 +184,49 @@ compatibility):
 }
 ```
 
+#### Updating claims at token refresh
+
+Hydra can be configured to retrieve updated token claims from an endpoint at
+token refresh, which provides updated claims for a given subject and scopes.
+This is similar to accepting consent request, where the application provides the
+session data by calling Hydra Admin API.
+
+You can configure `urls.hooks.token_refresh` config key:
+
+```yaml
+urls:
+  hooks:
+    token_refresh: https://my-example.app/token-refresh-hook
+```
+
+Hydra makes a `POST` request to this hook with the following payload:
+
+```json
+{
+  "subject": "foo",
+  "granted_scopes": ["openid", "offline"],
+  "granted_audience": []
+}
+```
+
+Hook has to respond with updated session data for access and ID tokens:
+
+```json
+{
+  "session": {
+    "access_token": {
+      "foo": "bar"
+    },
+    "id_token": {
+      "bar": "baz"
+    }
+  }
+}
+```
+
+Hydra accepts only "200 OK" status code in the hook response, otherwise it will
+deny token refresh.
+
 ### OAuth 2.0 Client Authentication with private/public keypairs
 
 ORY Hydra supports OAuth 2.0 Client Authentication with RSA and ECDSA
