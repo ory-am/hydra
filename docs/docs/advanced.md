@@ -199,7 +199,7 @@ urls:
     token_refresh: https://my-example.app/token-refresh-hook
 ```
 
-Hydra calls this hook if it is configured with the following payload:
+Hydra makes a `POST` request to this hook with the following payload:
 
 ```json
 {

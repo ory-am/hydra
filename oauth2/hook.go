@@ -75,10 +75,11 @@ func TokenRefreshHook(config *config.Provider) AccessRequestHook {
 		if err != nil {
 			return errorsx.WithStack(err)
 		}
+		defer resp.Body.Close()
+
 		if resp.StatusCode != http.StatusOK {
 			return errorsx.WithStack(fosite.ErrServerError.WithDebugf("Token refresh hook responded with %s status.", resp.Status))
 		}
-		defer resp.Body.Close()
 
 		var respBody TokenRefreshHookResponse
 		if err := json.NewDecoder(resp.Body).Decode(&respBody); err != nil {
